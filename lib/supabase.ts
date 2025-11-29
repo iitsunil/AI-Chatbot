@@ -1,19 +1,32 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables')
+function getSupabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!url) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
+  return url
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+function getSupabaseAnonKey() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!key) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
+  }
+  return key
+}
+
+// Client-side Supabase client (only created when needed)
+export function getSupabaseClient() {
+  return createClient(getSupabaseUrl(), getSupabaseAnonKey())
+}
 
 // Server-side client with service role key for admin operations
 export function createServerClient() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const supabaseUrl = getSupabaseUrl()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceRoleKey) {
-    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY')
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
   }
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
