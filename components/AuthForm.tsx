@@ -35,7 +35,17 @@ export default function AuthForm() {
       } else if (isSignUp) {
         const { error } = await signUp(email, password);
         if (error) {
-          setError(error.message);
+          // Check for specific error types
+          if (
+            error.message?.toLowerCase().includes("already registered") ||
+            error.message?.toLowerCase().includes("user already exists")
+          ) {
+            setError(
+              "This email is already registered. Please sign in instead or use the 'Forgot password?' option if you don't remember your password."
+            );
+          } else {
+            setError(error.message);
+          }
         } else {
           setMessage(
             "Sign up successful! Please check your email to verify your account before signing in."
