@@ -5,20 +5,63 @@ import {
   getConversationHistory,
 } from "@/lib/db";
 import { generateChatResponseFallback } from "@/lib/aiFallback";
+import { createClient } from "@supabase/supabase-js";
+
+// Helper to get authenticated user from request
+async function getAuthenticatedUser(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Missing Supabase environment variables");
+  }
+
+  // Create a client with anon key for token verification
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  // Get the authorization header
+  const authHeader = request.headers.get("authorization");
+
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
+    if (user && !error) {
+      return user;
+    }
+  }
+
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, message } = await request.json();
+    // Get authenticated user
+    const user = await getAuthenticatedUser(request);
 
-    if (!userId || !message) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Missing userId or message" },
-        { status: 400 }
+        { error: "Unauthorized. Please sign in." },
+        { status: 401 }
       );
     }
 
+    const { message } = await request.json();
+
+    if (!message) {
+      return NextResponse.json({ error: "Missing message" }, { status: 400 });
+    }
+
+    const userId = user.id;
+    console.log(`[Chat API] Processing message for userId: ${userId}`);
+
     // Get or create conversation
     const conversationId = await getOrCreateConversation(userId);
+    console.log(
+      `[Chat API] Using conversationId: ${conversationId} for userId: ${userId}`
+    );
 
     // Get conversation history
     const history = await getConversationHistory(conversationId);
@@ -46,20 +89,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Chat API error:", error);
-    const raw = error instanceof Error ? error.message : String(error);
-
-    // Map raw error to user-safe message
-    let publicMessage = "Something went wrong. Please try again shortly.";
-    if (/rate|quota|limit/i.test(raw)) publicMessage = "Rate limit reached. Please wait and retry.";
-    if (/timeout|network/i.test(raw)) publicMessage = "Network issue. Please retry.";
-    if (/invalid api key|auth|unauthorized/i.test(raw)) publicMessage = "Authentication error. Check configuration.";
-
-    // Always log full details server-side, but never expose them to client except in dev optionally via debug flag.
-    const debug = process.env.NODE_ENV === "development" ? { debug: raw } : {};
-
-    return NextResponse.json(
-      { error: publicMessage, ...debug },
-      { status: 500 }
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

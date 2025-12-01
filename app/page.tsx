@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import ChatMessage from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import { Message } from "@/lib/db";
-
-const USER_ID = "default-user"; // In a real app, this would come from auth
+import { useAuth } from "@/lib/auth";
+import AuthForm from "@/components/AuthForm";
 
 // Constants to avoid ESLint unescaped entities warnings
 const APOSTROPHE = "'";
@@ -15,6 +15,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { user, session, loading, signOut } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,9 +44,9 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
         },
         body: JSON.stringify({
-          userId: USER_ID,
           message: content.trim(),
         }),
       });
@@ -85,17 +86,27 @@ export default function Home() {
     }
   };
 
-  const handleProfileRequest = async () => {
+  const handleProfileRequest = async (content: string) => {
     setIsLoading(true);
+
+    // Add user's question to the messages
+    const userMessage: Message = {
+      id: `temp-${Date.now()}`,
+      conversation_id: "",
+      role: "user",
+      content: content.trim(),
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+
     try {
       const response = await fetch("/api/profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({
-          userId: USER_ID,
-        }),
+        body: JSON.stringify({}),
       });
 
       if (!response.ok) {
@@ -147,20 +158,42 @@ export default function Home() {
 
   const handleMessageSubmit = async (content: string) => {
     if (isProfileRequest(content)) {
-      await handleProfileRequest();
+      await handleProfileRequest(content);
     } else {
       await handleSendMessage(content);
     }
   };
 
+  // Show loading state while checking auth
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // Show auth form if not authenticated
+  if (!user) {
+    return <AuthForm />;
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-4">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900">AI Chatbot</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Chat freely - I{APOSTROPHE}ll learn and remember our conversations
-          </p>
+        <div className="max-w-4xl mx-auto flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">AI Chatbot</h1>
+            <p className="text-sm text-gray-600 mt-1">
+              Chat freely - I{APOSTROPHE}ll learn and remember our conversations
+            </p>
+          </div>
+          <button
+            onClick={signOut}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm"
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 

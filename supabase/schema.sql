@@ -1,7 +1,11 @@
+-- Enable Supabase Auth extension (if not already enabled)
+-- This is usually enabled by default in Supabase projects
+
 -- Create conversations table
+-- user_id now references auth.users.id (UUID)
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -16,8 +20,9 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 -- Create user_profiles table for storing personality profiles
+-- user_id now references auth.users.id (UUID)
 CREATE TABLE IF NOT EXISTS user_profiles (
-  user_id TEXT PRIMARY KEY,
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   profile_text TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -34,16 +39,52 @@ ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
--- Create policies for public access (for demo purposes)
--- In production, you'd want more restrictive policies
-CREATE POLICY "Allow public read access" ON conversations FOR SELECT USING (true);
-CREATE POLICY "Allow public insert access" ON conversations FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update access" ON conversations FOR UPDATE USING (true);
+-- Create policies for authenticated users only
+-- Users can only access their own data
 
-CREATE POLICY "Allow public read access" ON messages FOR SELECT USING (true);
-CREATE POLICY "Allow public insert access" ON messages FOR INSERT WITH CHECK (true);
+-- Conversations policies
+CREATE POLICY "Users can view their own conversations"
+  ON conversations FOR SELECT
+  USING (auth.uid() = user_id);
 
-CREATE POLICY "Allow public read access" ON user_profiles FOR SELECT USING (true);
-CREATE POLICY "Allow public insert access" ON user_profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update access" ON user_profiles FOR UPDATE USING (true);
+CREATE POLICY "Users can create their own conversations"
+  ON conversations FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
 
+CREATE POLICY "Users can update their own conversations"
+  ON conversations FOR UPDATE
+  USING (auth.uid() = user_id);
+
+-- Messages policies
+CREATE POLICY "Users can view messages from their conversations"
+  ON messages FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM conversations
+      WHERE conversations.id = messages.conversation_id
+      AND conversations.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can insert messages to their conversations"
+  ON messages FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM conversations
+      WHERE conversations.id = messages.conversation_id
+      AND conversations.user_id = auth.uid()
+    )
+  );
+
+-- User profiles policies
+CREATE POLICY "Users can view their own profile"
+  ON user_profiles FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create their own profile"
+  ON user_profiles FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own profile"
+  ON user_profiles FOR UPDATE
+  USING (auth.uid() = user_id);
